@@ -48,29 +48,76 @@ def extract_wedding(text):
     }
 
 def extract_obituary(text):
-    deceased = re.search(r"(?:故|고인)\s*[:：]?\s*([가-힣]{2,4})", text)
-    funeral = re.search(r"빈소\s*[:：]?\s*([^\n]+)", text)
-    departure = re.search(r"발인\s*[:：]?\s*([^\n]+)", text)
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+
+    deceased = ""
+    funeral_home = ""
+    departure = ""
+
+    # 1. 고인 성함
+    deceased_patterns = [
+        r"(?:故|고인)\s*[:：]?\s*([가-힣]{2,4})",
+        r"([가-힣]{2,4})\s*님께서\s*별세",
+        r"([가-힣]{2,4})\s*별세",
+    ]
+
+    for pattern in deceased_patterns:
+        match = re.search(pattern, text)
+        if match:
+            deceased = match.group(1).strip()
+            break
+
+    # 2. 빈소 - 같은 줄
+    funeral_patterns = [
+        r"빈소\s*[:：]?\s*([^\n]+)",
+        r"장례식장\s*[:：]?\s*([^\n]+)",
+    ]
+
+    for pattern in funeral_patterns:
+        match = re.search(pattern, text)
+        if match:
+            funeral_home = match.group(1).strip()
+            break
+
+    # 3. 빈소 - 다음 줄
+    if not funeral_home:
+        for i, line in enumerate(lines):
+            if line in ["빈소", "장례식장"]:
+                if i + 1 < len(lines):
+                    funeral_home = lines[i + 1].strip()
+                    break
+
+    # 4. 빈소 - 키워드 포함 줄
+    if not funeral_home:
+        for line in lines:
+            if any(word in line for word in ["장례식장", "빈소", "호실", "특실"]):
+                funeral_home = line.strip()
+                break
+
+    # 5. 발인 - 같은 줄
+    departure_patterns = [
+        r"발인\s*[:：]?\s*([^\n]+)",
+        r"발인일시\s*[:：]?\s*([^\n]+)",
+        r"발인일\s*[:：]?\s*([^\n]+)",
+    ]
+
+    for pattern in departure_patterns:
+        match = re.search(pattern, text)
+        if match:
+            departure = match.group(1).strip()
+            break
+
+    # 6. 발인 - 다음 줄
+    if not departure:
+        for i, line in enumerate(lines):
+            if line in ["발인", "발인일시", "발인일"]:
+                if i + 1 < len(lines):
+                    departure = lines[i + 1].strip()
+                    break
 
     return {
         "type": "조사",
-        "deceased": deceased.group(1) if deceased else "",
-        "funeral_home": funeral.group(1).strip() if funeral else "",
-        "departure": departure.group(1).strip() if departure else ""
+        "deceased": deceased,
+        "funeral_home": funeral_home,
+        "departure": departure,
     }
-
-@app.post("/crawl")
-def crawl(req: RequestData):
-    try:
-        text = crawl_page(req.url)
-
-        if req.kind == "조사":
-            return extract_obituary(text)
-
-        return extract_wedding(text)
-
-    except Exception as e:
-        return {
-            "type": "에러",
-            "error": str(e)
-        }
