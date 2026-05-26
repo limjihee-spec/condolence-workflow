@@ -131,10 +131,25 @@ def extract_obituary(text):
                 departure = line.strip()
                 break
 
-    return {
-    "type": "조사",
-    "deceased": deceased,
-    "funeral_home": funeral_home,
-    "departure": departure,
-    "debug_text": text[:1000]
-}
+       return {
+        "type": "조사",
+        "deceased": deceased,
+        "funeral_home": funeral_home,
+        "departure": departure,
+        "debug_text": text[:1000]
+    }
+@app.post("/crawl")
+def crawl(req: RequestData):
+    try:
+        text = crawl_page(req.url)
+
+        if req.kind == "조사":
+            return extract_obituary(text)
+
+        return extract_wedding(text)
+
+    except Exception as e:
+        return {
+            "type": "에러",
+            "error": str(e)
+        }
