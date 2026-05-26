@@ -132,8 +132,9 @@ def extract_obituary(text):
                 break
 
     return {
-        "type": "조사",
-        "deceased": deceased,
-        "funeral_home": funeral_home,
-        "departure": departure,
-    }
+    "type": "조사",
+    "deceased": deceased,
+    "funeral_home": funeral_home,
+    "departure": departure,
+    "debug_text": text[:1000]
+}
