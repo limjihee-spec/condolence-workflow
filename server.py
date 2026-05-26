@@ -27,6 +27,7 @@ def crawl_page(url):
 
     res = requests.get(url, headers=headers, timeout=20)
     res.raise_for_status()
+    res.encoding = res.apparent_encoding
 
     soup = BeautifulSoup(res.text, "html.parser")
 
