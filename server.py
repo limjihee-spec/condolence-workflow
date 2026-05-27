@@ -250,15 +250,15 @@ def analyze_with_gemini(kind, url, text):
 }
 """
 
-    rules = """
-    - 고인 성함은 실제 사람 이름만.
-    - 빈소는 장례식장명, 빈소명, 호실을 포함해서 최대한 정확히.
-    - 발인일정은 날짜와 시간이 있으면 함께 넣어.
-    - 원문에 script 데이터가 섞여 있어도 필요한 값만 추출해.
-    - javascript 코드, window 변수명, bubble 코드 등은 무시해.
-    - 실제 장례 정보만 추출해.
-    - 모르면 빈 문자열 "".
-    """
+        rules = """
+- 고인 성함은 실제 사람 이름만.
+- 빈소는 장례식장명, 빈소명, 호실을 포함해서 최대한 정확히.
+- 발인일정은 날짜와 시간이 있으면 함께 넣어.
+- 원문에 script 데이터가 섞여 있어도 필요한 값만 추출해.
+- javascript 코드, window 변수명, bubble 코드 등은 무시해.
+- 실제 장례 정보만 추출해.
+- 모르면 빈 문자열 "".
+"""
 
     else:
         schema_text = """
@@ -276,6 +276,7 @@ def analyze_with_gemini(kind, url, text):
 - 주소는 실제 도로명 주소.
 - 장소명과 주소를 섞지 마.
 - 원문에 script 데이터가 섞여 있어도 필요한 값만 추출해.
+- javascript 코드, window 변수명, bubble 코드 등은 무시해.
 - 모르면 빈 문자열 "".
 """
 
@@ -303,7 +304,7 @@ URL: {url}
         prompt,
         generation_config={
             "temperature": 0,
-            "max_output_tokens": 600,
+            "max_output_tokens": 400,
         }
     )
 
