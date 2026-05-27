@@ -3,8 +3,14 @@ from pydantic import BaseModel
 import requests
 from bs4 import BeautifulSoup
 import re
+import os
+import json
+import google.generativeai as genai
 
 app = FastAPI()
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+genai.configure(api_key=GEMINI_API_KEY)
 
 
 class RequestData(BaseModel):
@@ -31,133 +37,213 @@ def crawl_page(url):
 
     soup = BeautifulSoup(res.text, "html.parser")
 
-    for tag in soup(["script", "style"]):
+    for tag in soup(["script", "style", "noscript"]):
         tag.decompose()
 
-    return soup.get_text("\n", strip=True)
+    text = soup.get_text("\n", strip=True)
+
+    return clean_text(text)
 
 
-def extract_wedding(text):
-    date = re.search(
-        r"\d{4}년\s*\d{1,2}월\s*\d{1,2}일",
-        text
-    )
+def clean_text(text):
+    remove_words = [
+        "스크롤",
+        "더 보기",
+        "갤러리",
+        "티맵",
+        "카카오내비",
+        "네이버지도",
+        "COPYRIGHT",
+        "All rights reserved",
+        "© NAVER Corp.",
+        "NeedIT",
+        "공유하기",
+        "닫기",
+        "확인",
+        "COPY",
+        "복사",
+    ]
 
-    time = re.search(
-        r"(오전|오후)\s*\d{1,2}시\s*\d{0,2}분?",
-        text
-    )
-
-    address = re.search(
-        r"(서울|부산|대구|인천|광주|대전|울산|세종|제주)\s+[가-힣]+구\s+[가-힣0-9]+(?:로|길)\s*\d+(?:-\d+)?",
-        text
-    )
-
-    place = ""
+    lines = []
 
     for line in text.splitlines():
-        if any(word in line for word in ["호텔", "웨딩", "컨벤션", "예식장", "홀"]):
-            place = line.strip()
-            break
+        line = line.strip()
 
-    wedding_date = (
-        (date.group(0) if date else "") +
-        " " +
-        (time.group(0) if time else "")
-    ).strip()
+        if not line:
+            continue
 
-    return {
-        "type": "경사",
-        "wedding_date": wedding_date,
-        "place": place,
-        "address": address.group(0) if address else ""
-    }
+        if len(line) <= 1:
+            continue
+
+        if line in remove_words:
+            continue
+
+        if any(word in line for word in remove_words):
+            continue
+
+        lines.append(line)
+
+    unique_lines = []
+    seen = set()
+
+    for line in lines:
+        if line not in seen:
+            unique_lines.append(line)
+            seen.add(line)
+
+    return "\n".join(unique_lines)
 
 
-def extract_obituary(text):
+def make_compact_context(kind, text):
     lines = [
         line.strip()
         for line in text.splitlines()
         if line.strip()
     ]
 
-    deceased = ""
-    funeral_home = ""
-    departure = ""
+    if kind == "조사":
+        keywords = [
+            "故",
+            "고인",
+            "별세",
+            "부고",
+            "빈소",
+            "장례식장",
+            "발인",
+            "발인일",
+            "발인일시",
+            "장지",
+            "상주",
+        ]
+    else:
+        keywords = [
+            "결혼",
+            "예식",
+            "예식 안내",
+            "신랑",
+            "신부",
+            "아들",
+            "딸",
+            "웨딩",
+            "호텔",
+            "컨벤션",
+            "예식장",
+            "오시는 길",
+            "주소",
+            "월",
+            "일",
+            "오전",
+            "오후",
+        ]
 
-    deceased_patterns = [
-        r"(?:故|고인|별세)\s*[:：]?\s*([가-힣]{2,4})",
-        r"([가-힣]{2,4})\s*님께서\s*별세",
-        r"([가-힣]{2,4})\s*님이\s*별세",
-        r"([가-힣]{2,4})\s*별세",
-    ]
+    selected = []
 
-    for pattern in deceased_patterns:
-        match = re.search(pattern, text)
-        if match:
-            deceased = match.group(1).strip()
-            break
+    # 상단 정보 우선 포함
+    selected.extend(lines[:40])
 
-    funeral_patterns = [
-        r"빈소\s*[:：]?\s*([^\n]+)",
-        r"장례식장\s*[:：]?\s*([^\n]+)",
-    ]
+    # 키워드 주변 라인 포함
+    for i, line in enumerate(lines):
+        if any(keyword in line for keyword in keywords):
+            start = max(0, i - 3)
+            end = min(len(lines), i + 5)
+            selected.extend(lines[start:end])
 
-    for pattern in funeral_patterns:
-        match = re.search(pattern, text)
-        if match:
-            value = match.group(1).strip()
-            if value and value not in ["빈소", "장례식장"]:
-                funeral_home = value
-                break
+    # 주소 후보 포함
+    address_pattern = (
+        r"(서울|부산|대구|인천|광주|대전|울산|세종|제주|경기|강원|충북|충남|전북|전남|경북|경남)"
+        r"\s+[가-힣0-9\s]+(?:로|길)\s*\d+"
+    )
 
-    if not funeral_home:
-        for i, line in enumerate(lines):
-            if line in ["빈소", "장례식장", "분향소"]:
-                if i + 1 < len(lines):
-                    funeral_home = lines[i + 1].strip()
-                    break
+    for line in lines:
+        if re.search(address_pattern, line):
+            selected.append(line)
 
-    if not funeral_home:
-        for line in lines:
-            if any(word in line for word in ["장례식장", "빈소", "호실", "특실"]):
-                funeral_home = line.strip()
-                break
+    compact = []
+    seen = set()
 
-    departure_patterns = [
-        r"발인\s*[:：]?\s*([^\n]+)",
-        r"발인일시\s*[:：]?\s*([^\n]+)",
-        r"발인일\s*[:：]?\s*([^\n]+)",
-    ]
+    for line in selected:
+        if line not in seen:
+            compact.append(line)
+            seen.add(line)
 
-    for pattern in departure_patterns:
-        match = re.search(pattern, text)
-        if match:
-            value = match.group(1).strip()
-            if value and value not in ["발인", "발인일", "발인일시"]:
-                departure = value
-                break
+    return "\n".join(compact)[:2500]
 
-    if not departure:
-        for i, line in enumerate(lines):
-            if line in ["발인", "발인일", "발인일시"]:
-                if i + 1 < len(lines):
-                    departure = lines[i + 1].strip()
-                    break
 
-    if not departure:
-        for line in lines:
-            if re.search(r"\d{1,2}월\s*\d{1,2}일", line) and re.search(r"\d{1,2}시", line):
-                departure = line.strip()
-                break
+def extract_json(text):
+    match = re.search(r"\{[\s\S]*\}", text)
 
-    return {
-        "type": "조사",
-        "deceased": deceased,
-        "funeral_home": funeral_home,
-        "departure": departure,
-        "debug_text": text[:1000]
-    }
+    if not match:
+        raise ValueError("Gemini 응답에서 JSON을 찾지 못했습니다: " + text[:300])
+
+    return json.loads(match.group(0))
+
+
+def analyze_with_gemini(kind, url, text):
+    context = make_compact_context(kind, text)
+
+    model = genai.GenerativeModel("gemini-2.5-flash")
+
+    if kind == "조사":
+        schema_text = """
+{
+  "type": "조사",
+  "deceased": "고인 성함",
+  "funeral_home": "빈소",
+  "departure": "발인일정"
+}
+"""
+        rules = """
+- 고인 성함은 "故", "고인", "별세" 근처의 실제 사람 이름.
+- 빈소는 장례식장명, 빈소명, 호실을 포함해서 최대한 정확히.
+- 발인일정은 날짜와 시간이 있으면 함께 넣어.
+- 모르면 빈 문자열 "".
+"""
+    else:
+        schema_text = """
+{
+  "type": "경사",
+  "wedding_date": "예식일정",
+  "place": "예식장소",
+  "address": "주소"
+}
+"""
+        rules = """
+- 예식일정은 날짜와 시간이 있으면 함께 넣어.
+- 예식장소는 호텔/웨딩홀/컨벤션/예식장/홀 이름.
+- 주소는 화환 배송 가능한 실제 도로명주소.
+- 장소명과 주소를 섞지 마.
+- 모르면 빈 문자열 "".
+"""
+
+    prompt = f"""
+너는 한국어 모바일 청첩장/부고장 정보 추출기야.
+설명하지 말고 JSON만 반환해.
+
+구분: {kind}
+URL: {url}
+
+반드시 아래 JSON 형식으로만 반환해:
+{schema_text}
+
+규칙:
+{rules}
+
+원문:
+{context}
+"""
+
+    response = model.generate_content(
+        prompt,
+        generation_config={
+            "temperature": 0,
+            "max_output_tokens": 500,
+        }
+    )
+
+    if not response.text:
+        raise ValueError("Gemini 응답이 비어 있습니다.")
+
+    return extract_json(response.text)
 
 
 @app.post("/crawl")
@@ -165,10 +251,30 @@ def crawl(req: RequestData):
     try:
         text = crawl_page(req.url)
 
-        if req.kind == "조사":
-            return extract_obituary(text)
+        result = analyze_with_gemini(
+            req.kind,
+            req.url,
+            text
+        )
 
-        return extract_wedding(text)
+        compact_debug = make_compact_context(req.kind, text)
+
+        if req.kind == "조사":
+            return {
+                "type": "조사",
+                "deceased": result.get("deceased", ""),
+                "funeral_home": result.get("funeral_home", ""),
+                "departure": result.get("departure", ""),
+                "debug_text": compact_debug
+            }
+
+        return {
+            "type": "경사",
+            "wedding_date": result.get("wedding_date", ""),
+            "place": result.get("place", ""),
+            "address": result.get("address", ""),
+            "debug_text": compact_debug
+        }
 
     except Exception as e:
         return {
