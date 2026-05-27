@@ -27,9 +27,7 @@ def home():
 
 
 def crawl_page(url):
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
+    headers = {"User-Agent": "Mozilla/5.0"}
 
     res = requests.get(url, headers=headers, timeout=20)
     res.raise_for_status()
@@ -43,21 +41,10 @@ def crawl_page(url):
     visible_text = soup.get_text("\n", strip=True)
 
     script_texts = []
-
     important_keywords = [
-        "고인",
-        "별세",
-        "부고",
-        "빈소",
-        "발인",
-        "장례식장",
-        "장지",
-        "상주",
-        "deceased",
-        "funeral",
-        "mortuary",
-        "burial",
-        "departure"
+        "고인", "별세", "부고", "빈소", "발인", "장례식장", "장지", "상주",
+        "deceased", "funeral", "mortuary", "burial", "departure",
+        "결혼", "예식", "웨딩", "호텔", "주소", "wedding", "address"
     ]
 
     for script in soup.find_all("script"):
@@ -76,21 +63,9 @@ def crawl_page(url):
 
 def clean_text(text):
     remove_words = [
-        "스크롤",
-        "더 보기",
-        "갤러리",
-        "티맵",
-        "카카오내비",
-        "네이버지도",
-        "COPYRIGHT",
-        "All rights reserved",
-        "© NAVER Corp.",
-        "NeedIT",
-        "공유하기",
-        "닫기",
-        "확인",
-        "COPY",
-        "복사",
+        "스크롤", "더 보기", "갤러리", "티맵", "카카오내비", "네이버지도",
+        "COPYRIGHT", "All rights reserved", "© NAVER Corp.", "NeedIT",
+        "공유하기", "닫기", "확인", "COPY", "복사"
     ]
 
     lines = []
@@ -124,60 +99,23 @@ def clean_text(text):
 
 
 def make_compact_context(kind, text):
-    lines = [
-        line.strip()
-        for line in text.splitlines()
-        if line.strip()
-    ]
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
 
     if kind == "조사":
         keywords = [
-            "故",
-            "고인",
-            "별세",
-            "부고",
-            "빈소",
-            "장례식장",
-            "발인",
-            "발인일",
-            "발인일시",
-            "장지",
-            "상주",
-            "mortuary",
-            "funeral",
-            "depart",
-            "deceased",
-            "room",
-            "place",
+            "故", "고인", "별세", "부고", "빈소", "장례식장", "발인",
+            "발인일", "발인일시", "장지", "상주",
+            "mortuary", "funeral", "depart", "deceased", "room", "place"
         ]
     else:
         keywords = [
-            "결혼",
-            "예식",
-            "예식 안내",
-            "신랑",
-            "신부",
-            "아들",
-            "딸",
-            "웨딩",
-            "호텔",
-            "컨벤션",
-            "예식장",
-            "오시는 길",
-            "주소",
-            "월",
-            "일",
-            "오전",
-            "오후",
-            "wedding",
-            "place",
-            "address",
-            "date",
-            "time",
+            "결혼", "예식", "예식 안내", "신랑", "신부", "아들", "딸",
+            "웨딩", "호텔", "컨벤션", "예식장", "오시는 길", "주소",
+            "월", "일", "오전", "오후",
+            "wedding", "place", "address", "date", "time"
         ]
 
     selected = []
-
     selected.extend(lines[:50])
 
     for i, line in enumerate(lines):
@@ -217,21 +155,16 @@ def extract_json(text):
 
     if start == -1 or end == -1:
         raise ValueError(
-            "Gemini 응답에서 JSON을 찾지 못했습니다: "
-            + text[:500]
+            "Gemini 응답에서 JSON을 찾지 못했습니다: " + text[:500]
         )
 
     cleaned = cleaned[start:end + 1]
 
     try:
         return json.loads(cleaned)
-
     except Exception as e:
         raise ValueError(
-            "JSON 파싱 실패: "
-            + str(e)
-            + " / 응답: "
-            + cleaned[:500]
+            "JSON 파싱 실패: " + str(e) + " / 응답: " + cleaned[:500]
         )
 
 
@@ -249,17 +182,13 @@ def analyze_with_gemini(kind, url, text):
   "departure": "발인일정"
 }
 """
-
         rules = """
 - 고인 성함은 실제 사람 이름만.
-- 빈소는 장례식장명, 빈소명, 호실을 포함해서 최대한 정확히.
-- 발인일정은 날짜와 시간이 있으면 함께 넣어.
-- 원문에 script 데이터가 섞여 있어도 필요한 값만 추출해.
-- javascript 코드, window 변수명, bubble 코드 등은 무시해.
-- 실제 장례 정보만 추출해.
-- 모르면 빈 문자열 "".
+- 빈소는 장례식장명, 빈소명, 호실 포함.
+- 발인일정은 날짜와 시간이 있으면 함께.
+- javascript, window 변수명, bubble 코드는 무시.
+- 모르면 "".
 """
-
     else:
         schema_text = """
 {
@@ -269,28 +198,21 @@ def analyze_with_gemini(kind, url, text):
   "address": "주소"
 }
 """
-
         rules = """
-- 예식일정은 날짜와 시간이 있으면 함께 넣어.
+- 예식일정은 날짜와 시간이 있으면 함께.
 - 예식장소는 호텔/웨딩홀/컨벤션 이름.
 - 주소는 실제 도로명 주소.
 - 장소명과 주소를 섞지 마.
-- 원문에 script 데이터가 섞여 있어도 필요한 값만 추출해.
-- javascript 코드, window 변수명, bubble 코드 등은 무시해.
-- 모르면 빈 문자열 "".
+- javascript, window 변수명, bubble 코드는 무시.
+- 모르면 "".
 """
 
     prompt = f"""
-너는 한국 모바일 청첩장/부고장 정보 추출기야.
-
-반드시 JSON만 반환해.
-설명 금지.
-코드블록 금지.
+JSON만 반환. 설명 금지. 코드블록 금지.
 
 구분: {kind}
-URL: {url}
 
-반환 형식:
+형식:
 {schema_text}
 
 규칙:
@@ -304,7 +226,7 @@ URL: {url}
         prompt,
         generation_config={
             "temperature": 0,
-            "max_output_tokens": 400,
+            "max_output_tokens": 1000,
         }
     )
 
@@ -325,10 +247,7 @@ def crawl(req: RequestData):
             text
         )
 
-        compact_debug = make_compact_context(
-            req.kind,
-            text
-        )
+        compact_debug = make_compact_context(req.kind, text)
 
         if req.kind == "조사":
             return {
