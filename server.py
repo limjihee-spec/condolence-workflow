@@ -176,12 +176,27 @@ def extract_json(text):
     cleaned = cleaned.replace("```", "")
     cleaned = cleaned.strip()
 
-    match = re.search(r"\{[\s\S]*\}", cleaned)
+    # 마지막 } 까지만 잘라냄
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
 
-    if not match:
-        raise ValueError("Gemini 응답에서 JSON을 찾지 못했습니다: " + text[:300])
+    if start == -1 or end == -1:
+        raise ValueError(
+            "Gemini 응답에서 JSON을 찾지 못했습니다: " + text[:500]
+        )
 
-    return json.loads(match.group(0))
+    cleaned = cleaned[start:end + 1]
+
+    try:
+        return json.loads(cleaned)
+
+    except Exception as e:
+        raise ValueError(
+            "JSON 파싱 실패: "
+            + str(e)
+            + " / 응답: "
+            + cleaned[:500]
+        )
 
 
 def analyze_with_gemini(kind, url, text):
@@ -242,7 +257,7 @@ URL: {url}
         prompt,
         generation_config={
             "temperature": 0,
-            "max_output_tokens": 500,
+            "max_output_tokens": 300,
         }
     )
 
