@@ -37,7 +37,6 @@ def crawl_page(url):
 
     soup = BeautifulSoup(res.text, "html.parser")
 
-    # style/noscript만 제거. script는 데이터가 있을 수 있으므로 제거하지 않음.
     for tag in soup(["style", "noscript"]):
         tag.decompose()
 
@@ -45,11 +44,30 @@ def crawl_page(url):
 
     script_texts = []
 
+    important_keywords = [
+        "고인",
+        "별세",
+        "부고",
+        "빈소",
+        "발인",
+        "장례식장",
+        "장지",
+        "상주",
+        "deceased",
+        "funeral",
+        "mortuary",
+        "burial",
+        "departure"
+    ]
+
     for script in soup.find_all("script"):
         content = script.get_text(" ", strip=True)
 
-        if content:
-            script_texts.append(content)
+        if not content:
+            continue
+
+        if any(keyword in content for keyword in important_keywords):
+            script_texts.append(content[:2000])
 
     all_text = visible_text + "\n" + "\n".join(script_texts)
 
@@ -185,7 +203,7 @@ def make_compact_context(kind, text):
             compact.append(line)
             seen.add(line)
 
-    return "\n".join(compact)[:3500]
+    return "\n".join(compact)[:2500]
 
 
 def extract_json(text):
