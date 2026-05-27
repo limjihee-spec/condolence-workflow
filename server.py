@@ -33,18 +33,27 @@ def crawl_page(url):
 
     res = requests.get(url, headers=headers, timeout=20)
     res.raise_for_status()
-
-    # 한글 깨짐 방지
     res.encoding = "utf-8"
 
     soup = BeautifulSoup(res.text, "html.parser")
 
-    for tag in soup(["script", "style", "noscript"]):
+    # style/noscript만 제거. script는 데이터가 있을 수 있으므로 제거하지 않음.
+    for tag in soup(["style", "noscript"]):
         tag.decompose()
 
-    text = soup.get_text("\n", strip=True)
+    visible_text = soup.get_text("\n", strip=True)
 
-    return clean_text(text)
+    script_texts = []
+
+    for script in soup.find_all("script"):
+        content = script.get_text(" ", strip=True)
+
+        if content:
+            script_texts.append(content)
+
+    all_text = visible_text + "\n" + "\n".join(script_texts)
+
+    return clean_text(all_text)
 
 
 def clean_text(text):
@@ -97,7 +106,6 @@ def clean_text(text):
 
 
 def make_compact_context(kind, text):
-
     lines = [
         line.strip()
         for line in text.splitlines()
@@ -117,6 +125,12 @@ def make_compact_context(kind, text):
             "발인일시",
             "장지",
             "상주",
+            "mortuary",
+            "funeral",
+            "depart",
+            "deceased",
+            "room",
+            "place",
         ]
     else:
         keywords = [
@@ -137,24 +151,23 @@ def make_compact_context(kind, text):
             "일",
             "오전",
             "오후",
+            "wedding",
+            "place",
+            "address",
+            "date",
+            "time",
         ]
 
     selected = []
 
-    # 상단 우선
-    selected.extend(lines[:40])
+    selected.extend(lines[:50])
 
-    # 키워드 주변 추출
     for i, line in enumerate(lines):
-
         if any(keyword in line for keyword in keywords):
-
-            start = max(0, i - 3)
-            end = min(len(lines), i + 5)
-
+            start = max(0, i - 5)
+            end = min(len(lines), i + 8)
             selected.extend(lines[start:end])
 
-    # 주소 후보 추가
     address_pattern = (
         r"(서울|부산|대구|인천|광주|대전|울산|세종|제주|경기|강원|충북|충남|전북|전남|경북|경남)"
         r"\s+[가-힣0-9\s]+(?:로|길)\s*\d+"
@@ -172,14 +185,11 @@ def make_compact_context(kind, text):
             compact.append(line)
             seen.add(line)
 
-    # 토큰 절약
-    return "\n".join(compact)[:2500]
+    return "\n".join(compact)[:3500]
 
 
 def extract_json(text):
-
     cleaned = text.strip()
-
     cleaned = cleaned.replace("```json", "")
     cleaned = cleaned.replace("```", "")
     cleaned = cleaned.strip()
@@ -208,13 +218,11 @@ def extract_json(text):
 
 
 def analyze_with_gemini(kind, url, text):
-
     context = make_compact_context(kind, text)
 
     model = genai.GenerativeModel("gemini-2.5-flash")
 
     if kind == "조사":
-
         schema_text = """
 {
   "type": "조사",
@@ -226,13 +234,13 @@ def analyze_with_gemini(kind, url, text):
 
         rules = """
 - 고인 성함은 실제 사람 이름만.
-- 빈소는 장례식장 + 호실 포함.
-- 발인일정은 날짜 + 시간 포함.
+- 빈소는 장례식장명, 빈소명, 호실을 포함해서 최대한 정확히.
+- 발인일정은 날짜와 시간이 있으면 함께 넣어.
+- 원문에 script 데이터가 섞여 있어도 필요한 값만 추출해.
 - 모르면 빈 문자열 "".
 """
 
     else:
-
         schema_text = """
 {
   "type": "경사",
@@ -243,10 +251,11 @@ def analyze_with_gemini(kind, url, text):
 """
 
         rules = """
-- 예식일정은 날짜 + 시간 포함.
+- 예식일정은 날짜와 시간이 있으면 함께 넣어.
 - 예식장소는 호텔/웨딩홀/컨벤션 이름.
 - 주소는 실제 도로명 주소.
 - 장소명과 주소를 섞지 마.
+- 원문에 script 데이터가 섞여 있어도 필요한 값만 추출해.
 - 모르면 빈 문자열 "".
 """
 
@@ -274,7 +283,7 @@ URL: {url}
         prompt,
         generation_config={
             "temperature": 0,
-            "max_output_tokens": 500,
+            "max_output_tokens": 600,
         }
     )
 
@@ -286,9 +295,7 @@ URL: {url}
 
 @app.post("/crawl")
 def crawl(req: RequestData):
-
     try:
-
         text = crawl_page(req.url)
 
         result = analyze_with_gemini(
@@ -303,7 +310,6 @@ def crawl(req: RequestData):
         )
 
         if req.kind == "조사":
-
             return {
                 "type": "조사",
                 "deceased": result.get("deceased", ""),
@@ -321,7 +327,6 @@ def crawl(req: RequestData):
         }
 
     except Exception as e:
-
         return {
             "type": "에러",
             "error": str(e)
