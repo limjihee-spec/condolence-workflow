@@ -170,7 +170,13 @@ def make_compact_context(kind, text):
 
 
 def extract_json(text):
-    match = re.search(r"\{[\s\S]*\}", text)
+    cleaned = text.strip()
+
+    cleaned = cleaned.replace("```json", "")
+    cleaned = cleaned.replace("```", "")
+    cleaned = cleaned.strip()
+
+    match = re.search(r"\{[\s\S]*\}", cleaned)
 
     if not match:
         raise ValueError("Gemini 응답에서 JSON을 찾지 못했습니다: " + text[:300])
@@ -217,7 +223,7 @@ def analyze_with_gemini(kind, url, text):
 
     prompt = f"""
 너는 한국어 모바일 청첩장/부고장 정보 추출기야.
-설명하지 말고 JSON만 반환해.
+설명하지 말고 JSON만 반환해. 코드블록도 쓰지 마. 
 
 구분: {kind}
 URL: {url}
