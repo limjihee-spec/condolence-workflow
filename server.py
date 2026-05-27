@@ -33,6 +33,8 @@ def crawl_page(url):
 
     res = requests.get(url, headers=headers, timeout=20)
     res.raise_for_status()
+
+    # 한글 깨짐 방지
     res.encoding = "utf-8"
 
     soup = BeautifulSoup(res.text, "html.parser")
@@ -95,6 +97,7 @@ def clean_text(text):
 
 
 def make_compact_context(kind, text):
+
     lines = [
         line.strip()
         for line in text.splitlines()
@@ -138,17 +141,20 @@ def make_compact_context(kind, text):
 
     selected = []
 
-    # 상단 정보 우선 포함
+    # 상단 우선
     selected.extend(lines[:40])
 
-    # 키워드 주변 라인 포함
+    # 키워드 주변 추출
     for i, line in enumerate(lines):
+
         if any(keyword in line for keyword in keywords):
+
             start = max(0, i - 3)
             end = min(len(lines), i + 5)
+
             selected.extend(lines[start:end])
 
-    # 주소 후보 포함
+    # 주소 후보 추가
     address_pattern = (
         r"(서울|부산|대구|인천|광주|대전|울산|세종|제주|경기|강원|충북|충남|전북|전남|경북|경남)"
         r"\s+[가-힣0-9\s]+(?:로|길)\s*\d+"
@@ -166,23 +172,25 @@ def make_compact_context(kind, text):
             compact.append(line)
             seen.add(line)
 
+    # 토큰 절약
     return "\n".join(compact)[:2500]
 
 
 def extract_json(text):
+
     cleaned = text.strip()
 
     cleaned = cleaned.replace("```json", "")
     cleaned = cleaned.replace("```", "")
     cleaned = cleaned.strip()
 
-    # 마지막 } 까지만 잘라냄
     start = cleaned.find("{")
     end = cleaned.rfind("}")
 
     if start == -1 or end == -1:
         raise ValueError(
-            "Gemini 응답에서 JSON을 찾지 못했습니다: " + text[:500]
+            "Gemini 응답에서 JSON을 찾지 못했습니다: "
+            + text[:500]
         )
 
     cleaned = cleaned[start:end + 1]
@@ -200,11 +208,13 @@ def extract_json(text):
 
 
 def analyze_with_gemini(kind, url, text):
+
     context = make_compact_context(kind, text)
 
     model = genai.GenerativeModel("gemini-2.5-flash")
 
     if kind == "조사":
+
         schema_text = """
 {
   "type": "조사",
@@ -213,13 +223,16 @@ def analyze_with_gemini(kind, url, text):
   "departure": "발인일정"
 }
 """
+
         rules = """
-- 고인 성함은 "故", "고인", "별세" 근처의 실제 사람 이름.
-- 빈소는 장례식장명, 빈소명, 호실을 포함해서 최대한 정확히.
-- 발인일정은 날짜와 시간이 있으면 함께 넣어.
+- 고인 성함은 실제 사람 이름만.
+- 빈소는 장례식장 + 호실 포함.
+- 발인일정은 날짜 + 시간 포함.
 - 모르면 빈 문자열 "".
 """
+
     else:
+
         schema_text = """
 {
   "type": "경사",
@@ -228,22 +241,26 @@ def analyze_with_gemini(kind, url, text):
   "address": "주소"
 }
 """
+
         rules = """
-- 예식일정은 날짜와 시간이 있으면 함께 넣어.
-- 예식장소는 호텔/웨딩홀/컨벤션/예식장/홀 이름.
-- 주소는 화환 배송 가능한 실제 도로명주소.
+- 예식일정은 날짜 + 시간 포함.
+- 예식장소는 호텔/웨딩홀/컨벤션 이름.
+- 주소는 실제 도로명 주소.
 - 장소명과 주소를 섞지 마.
 - 모르면 빈 문자열 "".
 """
 
     prompt = f"""
-너는 한국어 모바일 청첩장/부고장 정보 추출기야.
-설명하지 말고 JSON만 반환해. 코드블록도 쓰지 마. 
+너는 한국 모바일 청첩장/부고장 정보 추출기야.
+
+반드시 JSON만 반환해.
+설명 금지.
+코드블록 금지.
 
 구분: {kind}
 URL: {url}
 
-반드시 아래 JSON 형식으로만 반환해:
+반환 형식:
 {schema_text}
 
 규칙:
@@ -257,7 +274,7 @@ URL: {url}
         prompt,
         generation_config={
             "temperature": 0,
-            "max_output_tokens": 300,
+            "max_output_tokens": 500,
         }
     )
 
@@ -269,7 +286,9 @@ URL: {url}
 
 @app.post("/crawl")
 def crawl(req: RequestData):
+
     try:
+
         text = crawl_page(req.url)
 
         result = analyze_with_gemini(
@@ -278,9 +297,13 @@ def crawl(req: RequestData):
             text
         )
 
-        compact_debug = make_compact_context(req.kind, text)
+        compact_debug = make_compact_context(
+            req.kind,
+            text
+        )
 
         if req.kind == "조사":
+
             return {
                 "type": "조사",
                 "deceased": result.get("deceased", ""),
@@ -298,6 +321,7 @@ def crawl(req: RequestData):
         }
 
     except Exception as e:
+
         return {
             "type": "에러",
             "error": str(e)
