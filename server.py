@@ -27,64 +27,42 @@ def home():
 
 
 def crawl_page(url):
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
+    from playwright.sync_api import sync_playwright
 
-    res = requests.get(url, headers=headers, timeout=20)
-    res.raise_for_status()
-    res.encoding = "utf-8"
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-dev-shm-usage"
+            ]
+        )
 
-    soup = BeautifulSoup(res.text, "html.parser")
+        page = browser.new_page(
+            viewport={
+                "width": 390,
+                "height": 1200
+            },
+            user_agent=(
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) "
+                "AppleWebKit/605.1.15 (KHTML, like Gecko) "
+                "Version/16.0 Mobile/15E148 Safari/604.1"
+            )
+        )
 
-    for tag in soup(["style", "noscript"]):
-        tag.decompose()
+        page.goto(
+            url,
+            wait_until="networkidle",
+            timeout=60000
+        )
 
-    visible_text = soup.get_text("\n", strip=True)
+        page.wait_for_timeout(5000)
 
-    script_texts = []
+        text = page.locator("body").inner_text()
 
-    important_keywords = [
-        "고인",
-        "별세",
-        "부고",
-        "빈소",
-        "발인",
-        "장례식장",
-        "장지",
-        "상주",
-        "입관",
-        "호실",
-        "특실",
-        "영안실",
-        "추모관",
-        "deceased",
-        "funeral",
-        "mortuary",
-        "burial",
-        "departure",
-        "결혼",
-        "예식",
-        "웨딩",
-        "호텔",
-        "주소",
-        "wedding",
-        "address"
-    ]
+        browser.close()
 
-    for script in soup.find_all("script"):
-        content = script.get_text(" ", strip=True)
-
-        if not content:
-            continue
-
-        if any(keyword in content for keyword in important_keywords):
-            script_texts.append(content[:3000])
-
-    all_text = visible_text + "\n" + "\n".join(script_texts)
-
-    return clean_text(all_text)
-
+        return clean_text(text)
 
 def clean_text(text):
 
