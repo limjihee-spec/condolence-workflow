@@ -275,6 +275,7 @@ def analyze_with_gemini(kind, url, text):
   "deceased": "고인 성함",
   "funeral_home": "빈소",
   "departure": "발인일정"
+  "address": "장례식장 주소"
 }
 """
 
@@ -285,6 +286,7 @@ def analyze_with_gemini(kind, url, text):
 - javascript, window 변수명, bubble 코드는 무시.
 - 빈소와 발인은 원문 중간/하단에 있을 수 있으니 전체 문맥에서 찾아.
 - 실제 장례 정보만 추출해.
+- 주소는 실제 장례식장 도로명 주소.
 - 모르면 "".
 """
 
