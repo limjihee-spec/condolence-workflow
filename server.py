@@ -45,7 +45,7 @@ def crawl_page(url):
         page.goto(url, wait_until="commit", timeout=20000)
         page.wait_for_timeout(3000)
 
-        for _ in range(6):
+        for _ in range(10):
             page.mouse.wheel(0, 1200)
             page.wait_for_timeout(800)
 
@@ -254,16 +254,30 @@ def crawl(req: RequestData):
         compact_debug = make_compact_context(req.kind, text)
 
         if req.kind == "조사":
-            address = extract_korean_address(text) or result.get("address", "")
+    address = extract_korean_address(text) or result.get("address", "")
 
-            return {
-                "type": "조사",
-                "deceased": result.get("deceased", ""),
-                "funeral_home": result.get("funeral_home", ""),
-                "departure": result.get("departure", ""),
-                "address": address,
-                "debug_text": compact_debug
-            }
+    deceased = result.get("deceased", "")
+    departure = result.get("departure", "")
+
+    deceased_match = re.search(r"故\s*([가-힣]{2,4})", text)
+    if deceased_match:
+        deceased = deceased_match.group(1)
+
+    departure_match = re.search(
+        r"발인\s*[:：]?\s*([0-9]{4}년\s*[0-9]{1,2}월\s*[0-9]{1,2}일\s*\([^)]+\)\s*[0-9]{1,2}시[0-9]{0,2}분)",
+        text
+    )
+    if departure_match:
+        departure = departure_match.group(1)
+
+    return {
+        "type": "조사",
+        "deceased": deceased,
+        "funeral_home": result.get("funeral_home", ""),
+        "departure": departure,
+        "address": address,
+        "debug_text": compact_debug
+    }
 
         return {
             "type": "경사",
