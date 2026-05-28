@@ -47,11 +47,11 @@ def crawl_page(url):
             )
         )
 
-        page.goto(url, wait_until="commit", timeout=20000)
-        page.wait_for_timeout(3000)
+        page.goto(url, wait_until="commit", timeout=15000)
+        page.wait_for_timeout(1500)
 
         # 페이지 전체를 천천히 스크롤해서 lazy-load 정보 로딩
-        for _ in range(4):
+        for _ in range(2):
             page.mouse.wheel(0, 1200)
             page.wait_for_timeout(500)
 
