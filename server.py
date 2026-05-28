@@ -51,7 +51,7 @@ def crawl_page(url):
         page.wait_for_timeout(3000)
 
         # 페이지 전체를 천천히 스크롤해서 lazy-load 정보 로딩
-        for _ in range(2):
+        for _ in range(6):
             page.mouse.wheel(0, 1200)
             page.wait_for_timeout(800)
 
