@@ -1,4 +1,6 @@
 fastapi
 uvicorn
+requests
+beautifulsoup4
 google-generativeai
 playwright
