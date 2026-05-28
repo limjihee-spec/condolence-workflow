@@ -1,7 +1,5 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-import requests
-from bs4 import BeautifulSoup
 import re
 import os
 import json
@@ -32,10 +30,7 @@ def crawl_page(url):
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=True,
-            args=[
-                "--no-sandbox",
-                "--disable-dev-shm-usage"
-            ]
+            args=["--no-sandbox", "--disable-dev-shm-usage"]
         )
 
         page = browser.new_page(
@@ -50,50 +45,26 @@ def crawl_page(url):
         page.goto(url, wait_until="commit", timeout=20000)
         page.wait_for_timeout(3000)
 
-        # 페이지 전체를 천천히 스크롤해서 lazy-load 정보 로딩
         for _ in range(6):
             page.mouse.wheel(0, 1200)
             page.wait_for_timeout(800)
 
-        # 접혀 있는 영역이 있으면 클릭 시도
-        click_words = ["더보기", "자세히", "상세", "위치", "오시는 길", "빈소", "발인"]
-        for word in click_words:
-            try:
-                page.get_by_text(word, exact=False).first.click(timeout=1000)
-                page.wait_for_timeout(1000)
-            except Exception:
-                pass
-
         text = page.locator("body").inner_text()
-
         browser.close()
 
         return clean_text(text)
 
-def clean_text(text):
 
+def clean_text(text):
     remove_words = [
-        "스크롤",
-        "더 보기",
-        "갤러리",
-        "티맵",
-        "카카오내비",
-        "네이버지도",
-        "COPYRIGHT",
-        "All rights reserved",
-        "© NAVER Corp.",
-        "NeedIT",
-        "공유하기",
-        "닫기",
-        "확인",
-        "COPY",
-        "복사"
+        "스크롤", "더 보기", "갤러리", "티맵", "카카오내비", "네이버지도",
+        "COPYRIGHT", "All rights reserved", "© NAVER Corp.", "NeedIT",
+        "공유하기", "닫기", "확인", "COPY", "복사"
     ]
 
     lines = []
 
     for line in text.splitlines():
-
         line = line.strip()
 
         if not line:
@@ -114,7 +85,6 @@ def clean_text(text):
     seen = set()
 
     for line in lines:
-
         if line not in seen:
             unique_lines.append(line)
             seen.add(line)
@@ -122,102 +92,57 @@ def clean_text(text):
     return "\n".join(unique_lines)
 
 
-def make_compact_context(kind, text):
+def extract_korean_address(text):
+    pattern = (
+        r"(서울특별시|서울|부산광역시|부산|대구광역시|대구|인천광역시|인천|광주광역시|광주|대전광역시|대전|울산광역시|울산|세종특별자치시|세종|"
+        r"경기도|경기|강원특별자치도|강원|충청북도|충북|충청남도|충남|전북특별자치도|전북|전라남도|전남|경상북도|경북|경상남도|경남|제주특별자치도|제주)"
+        r"\s+[가-힣]+(?:시|군|구)\s+[가-힣0-9]+(?:로|길)\s*\d+(?:-\d+)?"
+    )
 
-    lines = [
-        line.strip()
-        for line in text.splitlines()
-        if line.strip()
-    ]
+    match = re.search(pattern, text)
+
+    if match:
+        return match.group(0).strip()
+
+    return ""
+
+
+def make_compact_context(kind, text):
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
 
     if kind == "조사":
-
         keywords = [
-            "故",
-            "고인",
-            "별세",
-            "부고",
-            "빈소",
-            "장례식장",
-            "발인",
-            "발인일",
-            "발인일시",
-            "장지",
-            "상주",
-            "입관",
-            "호실",
-            "특실",
-            "층",
-            "영안실",
-            "추모관",
-            "mortuary",
-            "funeral",
-            "depart",
-            "deceased",
-            "room",
-            "place",
-            "date",
-            "time"
+            "故", "고인", "별세", "부고", "빈소", "장례식장", "발인",
+            "발인일", "발인일시", "장지", "상주", "입관", "호실",
+            "특실", "층", "영안실", "추모관", "주소", "오시는 길",
+            "mortuary", "funeral", "depart", "deceased", "room",
+            "place", "date", "time", "address"
         ]
-
     else:
-
         keywords = [
-            "결혼",
-            "예식",
-            "예식 안내",
-            "신랑",
-            "신부",
-            "아들",
-            "딸",
-            "웨딩",
-            "호텔",
-            "컨벤션",
-            "예식장",
-            "오시는 길",
-            "주소",
-            "월",
-            "일",
-            "오전",
-            "오후",
-            "wedding",
-            "place",
-            "address",
-            "date",
-            "time"
+            "결혼", "예식", "예식 안내", "신랑", "신부", "아들", "딸",
+            "웨딩", "호텔", "컨벤션", "예식장", "오시는 길", "주소",
+            "월", "일", "오전", "오후", "wedding", "place",
+            "address", "date", "time"
         ]
 
     selected = []
-
-    # 상단 영역 포함
     selected.extend(lines[:80])
 
-    # 키워드 주변 확장
     for i, line in enumerate(lines):
-
         if any(keyword in line for keyword in keywords):
-
             start = max(0, i - 8)
             end = min(len(lines), i + 12)
-
             selected.extend(lines[start:end])
 
-    # 주소 추출 강화
-    address_pattern = (
-        r"(서울|부산|대구|인천|광주|대전|울산|세종|제주|경기|강원|충북|충남|전북|전남|경북|경남)"
-        r"\s+[가-힣0-9\s]+(?:로|길)\s*\d+"
-    )
-
-    for line in lines:
-
-        if re.search(address_pattern, line):
-            selected.append(line)
+    address = extract_korean_address(text)
+    if address:
+        selected.append(address)
 
     compact = []
     seen = set()
 
     for line in selected:
-
         if line not in seen:
             compact.append(line)
             seen.add(line)
@@ -229,9 +154,7 @@ def make_compact_context(kind, text):
 
 
 def extract_json(text):
-
     cleaned = text.strip()
-
     cleaned = cleaned.replace("```json", "")
     cleaned = cleaned.replace("```", "")
     cleaned = cleaned.strip()
@@ -240,58 +163,40 @@ def extract_json(text):
     end = cleaned.rfind("}")
 
     if start == -1 or end == -1:
-
-        raise ValueError(
-            "Gemini 응답에서 JSON을 찾지 못했습니다: "
-            + text[:500]
-        )
+        raise ValueError("Gemini 응답에서 JSON을 찾지 못했습니다: " + text[:500])
 
     cleaned = cleaned[start:end + 1]
 
     try:
         return json.loads(cleaned)
-
     except Exception as e:
-
-        raise ValueError(
-            "JSON 파싱 실패: "
-            + str(e)
-            + " / 응답: "
-            + cleaned[:500]
-        )
+        raise ValueError("JSON 파싱 실패: " + str(e) + " / 응답: " + cleaned[:500])
 
 
 def analyze_with_gemini(kind, url, text):
-
     context = make_compact_context(kind, text)
-
     model = genai.GenerativeModel("gemini-2.5-flash")
 
     if kind == "조사":
-
         schema_text = """
 {
   "type": "조사",
   "deceased": "고인 성함",
   "funeral_home": "빈소",
-  "departure": "발인일정"
+  "departure": "발인일정",
   "address": "장례식장 주소"
 }
 """
-
         rules = """
 - 고인 성함은 실제 사람 이름만.
 - 빈소는 장례식장명, 빈소명, 호실 포함.
 - 발인일정은 날짜와 시간이 있으면 함께.
-- javascript, window 변수명, bubble 코드는 무시.
-- 빈소와 발인은 원문 중간/하단에 있을 수 있으니 전체 문맥에서 찾아.
-- 실제 장례 정보만 추출해.
 - 주소는 실제 장례식장 도로명 주소.
+- 빈소와 발인과 주소는 원문 중간/하단에 있을 수 있으니 전체 문맥에서 찾아.
+- 실제 장례 정보만 추출해.
 - 모르면 "".
 """
-
     else:
-
         schema_text = """
 {
   "type": "경사",
@@ -300,13 +205,11 @@ def analyze_with_gemini(kind, url, text):
   "address": "주소"
 }
 """
-
         rules = """
 - 예식일정은 날짜와 시간이 있으면 함께.
 - 예식장소는 호텔/웨딩홀/컨벤션 이름.
 - 주소는 실제 도로명 주소.
 - 장소명과 주소를 섞지 마.
-- javascript, window 변수명, bubble 코드는 무시.
 - 실제 예식 정보만 추출해.
 - 모르면 "".
 """
@@ -344,29 +247,21 @@ JSON만 반환.
 
 @app.post("/crawl")
 def crawl(req: RequestData):
-
     try:
-
         text = crawl_page(req.url)
 
-        result = analyze_with_gemini(
-            req.kind,
-            req.url,
-            text
-        )
-
-        compact_debug = make_compact_context(
-            req.kind,
-            text
-        )
+        result = analyze_with_gemini(req.kind, req.url, text)
+        compact_debug = make_compact_context(req.kind, text)
 
         if req.kind == "조사":
+            address = extract_korean_address(text) or result.get("address", "")
 
             return {
                 "type": "조사",
                 "deceased": result.get("deceased", ""),
                 "funeral_home": result.get("funeral_home", ""),
                 "departure": result.get("departure", ""),
+                "address": address,
                 "debug_text": compact_debug
             }
 
@@ -379,7 +274,6 @@ def crawl(req: RequestData):
         }
 
     except Exception as e:
-
         return {
             "type": "에러",
             "error": str(e)
