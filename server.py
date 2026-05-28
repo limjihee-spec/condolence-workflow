@@ -39,10 +39,7 @@ def crawl_page(url):
         )
 
         page = browser.new_page(
-            viewport={
-                "width": 390,
-                "height": 1200
-            },
+            viewport={"width": 390, "height": 1200},
             user_agent=(
                 "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) "
                 "AppleWebKit/605.1.15 (KHTML, like Gecko) "
@@ -50,13 +47,22 @@ def crawl_page(url):
             )
         )
 
-        page.goto(
-            url,
-            wait_until="networkidle",
-            timeout=60000
-        )
-
+        page.goto(url, wait_until="domcontentloaded", timeout=60000)
         page.wait_for_timeout(5000)
+
+        # 페이지 전체를 천천히 스크롤해서 lazy-load 정보 로딩
+        for _ in range(10):
+            page.mouse.wheel(0, 1000)
+            page.wait_for_timeout(1000)
+
+        # 접혀 있는 영역이 있으면 클릭 시도
+        click_words = ["더보기", "자세히", "상세", "위치", "오시는 길", "빈소", "발인"]
+        for word in click_words:
+            try:
+                page.get_by_text(word, exact=False).first.click(timeout=1000)
+                page.wait_for_timeout(1000)
+            except Exception:
+                pass
 
         text = page.locator("body").inner_text()
 
